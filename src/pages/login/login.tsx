@@ -1,8 +1,16 @@
-import type { FormEventHandler } from 'react';
+import {
+  type Dispatch,
+  type FormEventHandler,
+  type SetStateAction,
+  useEffect,
+  useState,
+} from 'react';
+import { useNavigate } from 'react-router';
 
-import FetchLogo from '@/assets/svgs/fetch-logo';
 import DogOne from '@/assets/images/dog-1.webp';
 import BlobOne from '@/assets/svgs/blob-1';
+import FetchLogo from '@/assets/svgs/fetch-logo';
+import LoadingSpinner from '@/assets/svgs/loading-spinner';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -13,11 +21,81 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { validateEmailField, validateNameField } from '@/lib/utils';
+import { useLoginMutation } from '@/services/auth';
 
 const Login = () => {
+  //* FORM STATES
+  const [name, setName] = useState<string>('');
+  const [email, setEmail] = useState<string>('');
+  const [error, setError] = useState<{ name: string; email: string }>({
+    name: '',
+    email: '',
+  });
+
+  const { mutate: login, isPending } = useLoginMutation();
+  const navigate = useNavigate();
+
+  //* FORM HANDLERS
+  const handleNameError = (msg: string) => {
+    setError((prev) => ({ ...prev, name: msg }));
+  };
+
+  const handleEmailError = (msg: string) => {
+    setError((prev) => ({ ...prev, email: msg }));
+  };
+
+  const handleInputChange = (
+    onChange: Dispatch<SetStateAction<string>>,
+    newValue: string,
+    valueError: string,
+    validateValue: typeof validateNameField,
+    handleValueError: typeof handleNameError,
+  ) => {
+    // Set the new input value
+    onChange(newValue);
+
+    // Validate the new value if there is a prior validation error
+    if (valueError) {
+      const isValidValue = validateValue(newValue, handleValueError);
+      if (isValidValue) handleValueError('');
+    }
+  };
+
   const handleSubmit: FormEventHandler<HTMLFormElement> = (e) => {
     e.preventDefault();
+
+    const isValidName = validateNameField(name, handleNameError),
+      isValidEmail = validateEmailField(email, handleEmailError);
+
+    // Return early if the name or email is invalid, else reset error and call the login mutation
+    if (!isValidName || !isValidEmail) return;
+    setError({ name: '', email: '' });
+
+    login(
+      { name, email },
+      {
+        onSuccess: () => {
+          // Store the user's info
+          localStorage.setItem('user', JSON.stringify({ name, email }));
+
+          // Reset form state
+          setName('');
+          setEmail('');
+
+          // Navigate to the dogs page
+          navigate('/dogs-for-adoption');
+        },
+      },
+    );
   };
+
+  //* AUTH CHECK
+  const user = localStorage.getItem('user');
+
+  useEffect(() => {
+    if (user) navigate('/dogs-for-adoption', { replace: true });
+  }, [user, navigate]);
 
   return (
     <div className="relative flex min-h-screen overflow-hidden">
@@ -40,39 +118,77 @@ const Login = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <form onSubmit={handleSubmit} className="grid items-center gap-4">
+              <form
+                noValidate
+                onSubmit={handleSubmit}
+                className="grid items-center gap-4"
+              >
                 <div className="flex flex-col gap-y-1.5">
                   <Label htmlFor="name">Name</Label>
                   <Input
                     type="text"
                     id="name"
+                    name="name"
                     placeholder="John Doe"
-                    pattern="^[A-Za-z]+( [A-Za-z]+)*$"
-                    minLength={2}
                     maxLength={50}
+                    onChange={({ target }) =>
+                      handleInputChange(
+                        setName,
+                        target.value,
+                        error.name,
+                        validateNameField,
+                        handleNameError,
+                      )
+                    }
+                    className={
+                      error.name &&
+                      'border-fetch-danger text-fetch-danger focus-visible:ring-fetch-danger/30'
+                    }
                   />
-                  <p className="hidden text-xs peer-invalid:block peer-invalid:text-fetch-danger md:text-sm">
-                    Please provide a valid name greater than or equal to 2
-                    characters.
-                  </p>
+                  {error.name && (
+                    <p className="text-xs text-fetch-danger md:text-sm">
+                      {error.name}
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-col gap-y-1.5">
-                  <Label htmlFor="email" className="peer-">
-                    Email
-                  </Label>
+                  <Label htmlFor="email">Email</Label>
                   <Input
                     type="email"
                     id="email"
+                    name="email"
                     placeholder="johndoe@gmail.com"
-                    minLength={2}
-                    maxLength={50}
+                    maxLength={254}
+                    onChange={({ target }) =>
+                      handleInputChange(
+                        setEmail,
+                        target.value,
+                        error.email,
+                        validateEmailField,
+                        handleEmailError,
+                      )
+                    }
+                    className={
+                      error.email &&
+                      'border-fetch-danger text-fetch-danger focus-visible:ring-fetch-danger/30'
+                    }
                   />
-                  <p className="hidden text-xs peer-invalid:block peer-invalid:text-fetch-danger md:text-sm">
-                    Please provide a valid email address.
-                  </p>
+                  {error.email && (
+                    <p className="text-xs text-fetch-danger md:text-sm">
+                      {error.email}
+                    </p>
+                  )}
                 </div>
-                <Button type="submit" className="mt-2">
-                  Get Started
+                <Button
+                  type="submit"
+                  disabled={isPending}
+                  className="mt-2 disabled:cursor-not-allowed"
+                >
+                  {isPending ? (
+                    <LoadingSpinner className="!h-6 !w-6 text-white" />
+                  ) : (
+                    'Get Started'
+                  )}
                 </Button>
               </form>
             </CardContent>
